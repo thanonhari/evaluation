@@ -1,8 +1,8 @@
 // ==========================================================
 // == ✨ กรุณาแก้ไขค่า 2 บรรทัดนี้ ✨ ==
 // ==========================================================
-const LIFF_ID = "xxxxxxxxxxxx"; // LIFF ID ของหน้าประเมินที่คุณสร้างใหม่
-const SCRIPT_URL = "xxxxxxxxxxxxxxx"; // URL ของ Web App ที่ได้จากการ Deploy
+const LIFF_ID = "2008171892-ev6E4WZ6"; // LIFF ID ของหน้าประเมินที่คุณสร้างใหม่
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzyXWfWx1hahs3TYuMk8I0S_yi_HVA3_gsYzX6mKsFM_HgRDO3eTZazf_3QVkdTw7Oq/exec"; // URL ของ Web App ที่ได้จากการ Deploy
 // ==========================================================
 
 // =====================================================================
