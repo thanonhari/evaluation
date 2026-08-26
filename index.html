@@ -98,18 +98,32 @@
       </div>
 
       <!-- Error State -->
-      <div id="errorState" class="hidden text-center py-8">
+      <div id="errorState" class="hidden text-center py-6">
         <div class="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">
           <i class="fas fa-exclamation-triangle"></i>
         </div>
         <h2 class="text-xl font-bold text-gray-800">เกิดข้อผิดพลาด</h2>
-        <p id="errorMessage" class="text-red-500 mt-2 text-sm leading-relaxed"></p>
+        <p id="errorMessage" class="text-red-500 mt-2 text-sm leading-relaxed break-words px-2"></p>
+        
+        <!-- Diagnostic Box -->
+        <div class="mt-4 bg-gray-50 border border-gray-200 rounded-xl p-3 text-left text-xs text-gray-600">
+          <div class="flex justify-between items-center mb-1">
+            <span class="font-semibold text-gray-700">ข้อมูลสำหรับแจ้งทีมงาน:</span>
+            <button type="button" onclick="copyDiagnosticInfo()" class="text-[#2c7744] hover:underline font-bold flex items-center space-x-1">
+              <i class="fas fa-copy"></i>
+              <span>คัดลอกข้อมูล</span>
+            </button>
+          </div>
+          <pre id="diagnosticSnippet" class="bg-white p-2 border rounded overflow-x-auto text-[11px] text-gray-700 max-h-24"></pre>
+        </div>
+
         <div class="mt-6 flex justify-center space-x-3">
-          <button type="button" onclick="location.reload()" class="bg-[#2c7744] hover:bg-[#235e36] text-white text-sm font-semibold py-2 px-6 rounded-lg transition-colors">
-            ลองใหม่อีกครั้ง
+          <button type="button" onclick="copyDiagnosticInfo(true)" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold py-2.5 px-4 rounded-xl shadow transition-colors flex items-center space-x-1">
+            <i class="fas fa-clipboard-check"></i>
+            <span>📋 คัดลอกรายละเอียดส่งช่าง</span>
           </button>
-          <button type="button" onclick="closeAppWindow()" class="bg-gray-200 hover:bg-gray-300 text-gray-700 text-sm font-semibold py-2 px-6 rounded-lg transition-colors">
-            ปิดหน้าต่าง
+          <button type="button" onclick="location.reload()" class="bg-[#2c7744] hover:bg-[#235e36] text-white text-xs font-semibold py-2.5 px-4 rounded-xl shadow transition-colors">
+            ลองใหม่อีกครั้ง
           </button>
         </div>
       </div>
@@ -178,6 +192,8 @@
     const LIFF_ID = "2007495650-QYp0MBBk";
     const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx6BZKTTBGM_9hQDdnVOLoGG6tWo9fhIdRZV57kVoAmg9kdzbwjC7jA3kn-j3N5iJz9/exec";
 
+    let lastDiagnosticInfo = "";
+
     function getTicketId() {
       const url = window.location.href;
       const urlParams = new URLSearchParams(window.location.search);
@@ -222,6 +238,7 @@
     const alreadyEvaluatedState = document.getElementById('alreadyEvaluatedState');
     const errorState = document.getElementById('errorState');
     const errorMessage = document.getElementById('errorMessage');
+    const diagnosticSnippet = document.getElementById('diagnosticSnippet');
 
     function closeAppWindow() {
       if (typeof liff !== 'undefined' && liff.isInClient && liff.isInClient()) {
@@ -231,13 +248,79 @@
       }
     }
 
-    function showError(msg) {
+    function recordDiagnostic(msg, rawData = null) {
+      const ticketId = getTicketId();
+      const score = document.querySelector('input[name="overall"]:checked')?.value || 'N/A';
+      lastDiagnosticInfo = `--- 🚨 รายงานปัญหาการประเมิน RRU Repair ---\n` +
+        `• รหัสใบงาน: ${ticketId || 'ไม่ระบุ'}\n` +
+        `• คะแนนที่เลือก: ${score} ดาว\n` +
+        `• ข้อผิดพลาด: ${msg}\n` +
+        `• เวลา: ${new Date().toLocaleString('th-TH')}\n` +
+        `• เบราว์เซอร์: ${navigator.userAgent}\n` +
+        `• ลิงก์: ${window.location.href}\n` +
+        (rawData ? `• Response Snippet: ${String(rawData).slice(0, 200)}\n` : '') +
+        `----------------------------------------`;
+      
+      if (diagnosticSnippet) {
+        diagnosticSnippet.textContent = lastDiagnosticInfo;
+      }
+    }
+
+    function copyDiagnosticInfo(showToast = false) {
+      if (!lastDiagnosticInfo) {
+        recordDiagnostic(errorMessage.textContent || 'Unknown error');
+      }
+      navigator.clipboard.writeText(lastDiagnosticInfo).then(() => {
+        Swal.fire({
+          icon: 'success',
+          title: 'คัดลอกแล้ว!',
+          text: 'คัดลอกรายละเอียดข้อผิดพลาดแล้ว สามารถส่งข้อความนี้ให้ทีมงาน IT ได้ทันทีครับ',
+          timer: 2000,
+          showConfirmButton: false,
+          confirmButtonColor: '#2c7744'
+        });
+      }).catch(() => {
+        // Fallback for older browsers
+        const textarea = document.createElement('textarea');
+        textarea.value = lastDiagnosticInfo;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        Swal.fire({
+          icon: 'success',
+          title: 'คัดลอกแล้ว!',
+          text: 'คัดลอกรายละเอียดข้อผิดพลาดแล้ว',
+          timer: 1500,
+          showConfirmButton: false
+        });
+      });
+    }
+
+    function showError(msg, rawData = null) {
       loadingState.classList.add('hidden');
       evaluationForm.classList.add('hidden');
       thankYouState.classList.add('hidden');
       alreadyEvaluatedState.classList.add('hidden');
       errorState.classList.remove('hidden');
       errorMessage.textContent = msg;
+      recordDiagnostic(msg, rawData);
+    }
+
+    // Helper สำหรับ Fetch API ที่ปลอดภัยต่อ HTML Redirect และ Parsing Errors
+    async function safeFetchJson(url, options = {}) {
+      const response = await fetch(url, options);
+      const rawText = await response.text();
+      
+      if (rawText.trim().startsWith('<') || rawText.includes('<!DOCTYPE')) {
+        throw new Error(`Server returned HTML instead of JSON: ${rawText.slice(0, 80)}...`);
+      }
+
+      try {
+        return JSON.parse(rawText);
+      } catch (parseErr) {
+        throw new Error(`Invalid JSON response: ${parseErr.message} (Raw: ${rawText.slice(0, 60)})`);
+      }
     }
 
     async function loadTicketData() {
@@ -250,8 +333,7 @@
       document.getElementById('ticketIdText').textContent = ticketId;
 
       try {
-        const res = await fetch(`${SCRIPT_URL}?action=getEvaluationData&ticketId=${encodeURIComponent(ticketId)}`);
-        const json = await res.json();
+        const json = await safeFetchJson(`${SCRIPT_URL}?action=getEvaluationData&ticketId=${encodeURIComponent(ticketId)}`);
 
         if (json.alreadyEvaluated) {
           loadingState.classList.add('hidden');
@@ -271,7 +353,7 @@
 
       } catch (e) {
         console.warn('Cannot fetch evaluation data:', e);
-        showError('ไม่สามารถเชื่อมต่อระบบประเมินได้ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่อีกครั้ง');
+        showError('ไม่สามารถเชื่อมต่อระบบประเมินได้: ' + e.message, e.message);
       }
     }
 
@@ -304,7 +386,7 @@
         });
       });
 
-      // 3. จัดการการส่งฟอร์ม (Submit)
+      // 3. จัดการการส่งฟอร์ม (Submit with Dual POST/GET Support)
       evaluationForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         const scoreRadio = document.querySelector('input[name="overall"]:checked');
@@ -325,7 +407,7 @@
           Swal.fire({
             icon: 'error',
             title: 'ไม่พบรหัสงานซ่อม',
-            text: 'ไม่สามารถระบุรหัสใบแจ้งซ่อมได้ กรุณาเปิดลิงก์ใหม่',
+            text: 'ไม่สามารถระบุรหัสใบแจ้งซ่อมได้ กรุณาเปิดลิงก์ใหม่อีกครั้ง',
             confirmButtonColor: '#2c7744'
           });
           return;
@@ -335,38 +417,70 @@
         submitBtn.disabled = true;
         submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> กำลังบันทึก...';
 
+        const comments = (document.getElementById('comments').value || '').trim();
         const payload = {
           action: 'submitEvaluation',
           ticketId: currentTicketId,
           overallScore: parseInt(score),
-          comments: (document.getElementById('comments').value || '').trim()
+          comments: comments
         };
 
+        let result = null;
+        let submitError = null;
+
+        // ขั้นตอนที่ 1: พยายามส่งผ่าน POST
         try {
           const res = await fetch(SCRIPT_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'text/plain;charset=utf-8' },
             body: JSON.stringify(payload)
           });
+          const rawText = await res.text();
 
-          const result = await res.json();
-          if (result.success) {
-            evaluationForm.classList.add('hidden');
-            thankYouState.classList.remove('hidden');
-
-            setTimeout(() => {
-              closeAppWindow();
-            }, 2500);
+          if (!rawText.trim().startsWith('<') && !rawText.includes('<!DOCTYPE')) {
+            result = JSON.parse(rawText);
           } else {
-            throw new Error(result.message || 'บันทึกไม่สำเร็จ');
+            console.warn('[Evaluation] POST returned HTML, falling back to GET method...');
           }
-        } catch (err) {
+        } catch (postErr) {
+          console.warn('[Evaluation] POST error, trying GET fallback:', postErr);
+        }
+
+        // ขั้นตอนที่ 2: Fallback ส่งผ่าน GET หาก POST ไม่สำเร็จหรือได้ HTML
+        if (!result) {
+          try {
+            const getUrl = `${SCRIPT_URL}?action=submitEvaluation&ticketId=${encodeURIComponent(currentTicketId)}&overallScore=${encodeURIComponent(score)}&comments=${encodeURIComponent(comments)}`;
+            result = await safeFetchJson(getUrl);
+          } catch (getErr) {
+            submitError = getErr;
+          }
+        }
+
+        // ขั้นตอนที่ 3: ประมวลผลลัพธ์
+        if (result && result.success) {
+          evaluationForm.classList.add('hidden');
+          thankYouState.classList.remove('hidden');
+
+          setTimeout(() => {
+            closeAppWindow();
+          }, 2500);
+        } else {
+          const errorMsg = (result && result.message) || (submitError && submitError.message) || 'บันทึกข้อมูลไม่สำเร็จ';
+          recordDiagnostic(errorMsg, submitError?.message);
+
           Swal.fire({
             icon: 'error',
-            title: 'เกิดข้อผิดพลาด',
-            text: err.message,
-            confirmButtonColor: '#2c7744'
+            title: 'เกิดข้อผิดพลาดในการบันทึก',
+            html: `
+              <p class="text-sm text-red-600 mb-3">${errorMsg}</p>
+              <button type="button" onclick="copyDiagnosticInfo(true)" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold py-2 px-4 rounded-lg transition-colors">
+                📋 คัดลอกรายละเอียด Error ส่งช่าง
+              </button>
+            `,
+            confirmButtonColor: '#2c7744',
+            confirmButtonText: 'ตกลง'
           });
+
           submitBtn.disabled = false;
           submitBtn.innerHTML = '<span>ส่งแบบประเมิน</span>';
         }
