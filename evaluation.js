@@ -1,120 +1,172 @@
 // ==========================================================
-// == ✨ กรุณาแก้ไขค่า 2 บรรทัดนี้ ✨ ==
+// evaluation.js — RRU Repair Evaluation System
 // ==========================================================
-const LIFF_ID = "2008171892-ev6E4WZ6"; // LIFF ID ของหน้าประเมินที่คุณสร้างใหม่
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzyXWfWx1hahs3TYuMk8I0S_yi_HVA3_gsYzX6mKsFM_HgRDO3eTZazf_3QVkdTw7Oq/exec"; // URL ของ Web App ที่ได้จากการ Deploy
-// const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx6BZKTTBGM_9hQDdnVOLoGG6tWo9fhIdRZV57kVoAmg9kdzbwjC7jA3kn-j3N5iJz9/exec"; // URL ของ Web App ที่ได้จากการ Deploy
-// ==========================================================
+const LIFF_ID = "2007495650-QYp0MBBk";
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx6BZKTTBGM_9hQDdnVOLoGG6tWo9fhIdRZV57kVoAmg9kdzbwjC7jA3kn-j3N5iJz9/exec";
 
-// =====================================================================
-// 🌟 ฟังก์ชันนี้ใช้สำหรับตรวจสอบว่าเคยประเมินไปแล้วหรือไม่ (frontend)
-// =====================================================================
-
-/**
- * เรียกใช้เมื่อโหลดหน้าเว็บ เพื่อเช็คว่า ticketId เคยถูกประเมินหรือยัง
- * ถ้าเคยประเมินแล้ว จะซ่อนฟอร์มและแสดงข้อความขอบคุณแทน
- */
-document.addEventListener("DOMContentLoaded", async () => {
-    const loadingDiv = document.getElementById('loading');
-    const formDiv = document.getElementById('evaluationForm');
-    const thankYouDiv = document.getElementById('thankYouMessage');
-
-    try {
-        await liff.init({ liffId: LIFF_ID });
-        if (!liff.isInClient()) {
-            loadingDiv.innerHTML = '<p class="text-red-500 font-bold text-center">กรุณาเปิดหน้านี้ผ่านแอปพลิเคชัน LINE</p>';
-            return;
-        }
-
-        const urlParams = new URLSearchParams(window.location.search);
-        const ticketId = urlParams.get('ticketId');
-        if (!ticketId) throw new Error("ไม่พบรหัสใบแจ้งซ่อม");
-
-        // เรียก API จาก Google Apps Script เพื่อตรวจสอบการประเมิน
-        const response = await fetch(`${SCRIPT_URL}?action=getEvaluationData&ticketId=${ticketId}`);
-        const data = await response.json();
-
-        if (data.error) throw new Error(data.error);
-
-        if (data.alreadyEvaluated) {
-            // แสดงข้อความขอบคุณ หากเคยประเมินแล้ว
-            loadingDiv.classList.add('hidden');
-            thankYouDiv.classList.remove('hidden');
-        } else {
-            populateForm(data.repairData);
-            loadingDiv.classList.add('hidden');
-            formDiv.classList.remove('hidden');
-        }
-
-    } catch (error) {
-        console.error("Error:", error);
-        loadingDiv.innerHTML = `<p class="text-red-500 font-bold text-center">เกิดข้อผิดพลาด: ${error.message}</p>`;
-    }
-});
-
-
-function populateForm(data) {
-    if (!data) throw new Error("ไม่พบข้อมูลงานซ่อม");
-    document.getElementById('info-ticketId').textContent = data['รหัสใบแจ้งซ่อม'] || 'N/A';
-    document.getElementById('info-equipmentName').textContent = data['ชื่อครุภัณฑ์'] || 'N/A';
-    document.getElementById('info-operator').textContent = data['ผู้ปฏิบัติงาน'] || 'N/A';
+function getParam(param) {
+  const urlParams = new URLSearchParams(window.location.search);
+  let val = urlParams.get(param);
+  if (!val && window.location.hash) {
+    const hashParams = new URLSearchParams(window.location.hash.substring(1));
+    val = hashParams.get(param);
+  }
+  return val || '';
 }
 
-document.getElementById('evaluationForm').addEventListener('submit', async function(e) {
-    e.preventDefault();
-    const submitBtn = document.getElementById('submitBtn');
-    
-    const overallScore = this.elements['overall'].value;
-    if (!overallScore) {
-        Swal.fire('กรุณาให้คะแนน', 'โปรดให้คะแนนความพึงพอใจโดยรวมก่อนส่งแบบประเมิน', 'warning');
-        return;
+const ticketId = getParam('ticketId');
+
+function closeAppWindow() {
+  if (typeof liff !== 'undefined' && liff.isInClient && liff.isInClient()) {
+    liff.closeWindow();
+  } else {
+    window.close();
+  }
+}
+
+function showError(msg) {
+  const loading = document.getElementById('loadingState') || document.getElementById('loading');
+  const form = document.getElementById('evaluationForm');
+  const thankYou = document.getElementById('thankYouState') || document.getElementById('thankYouMessage');
+  const errState = document.getElementById('errorState');
+  const errMsg = document.getElementById('errorMessage');
+
+  if (loading) loading.classList.add('hidden');
+  if (form) form.classList.add('hidden');
+  if (thankYou) thankYou.classList.add('hidden');
+  if (errState) {
+    errState.classList.remove('hidden');
+    if (errMsg) errMsg.textContent = msg;
+  } else if (loading) {
+    loading.innerHTML = `<p class="text-red-500 font-bold text-center">เกิดข้อผิดพลาด: ${msg}</p>`;
+    loading.classList.remove('hidden');
+  }
+}
+
+async function loadTicketData() {
+  if (!ticketId) {
+    showError('ไม่พบรหัสใบแจ้งซ่อม (Ticket ID)');
+    return;
+  }
+
+  const ticketIdEl = document.getElementById('ticketIdText') || document.getElementById('info-ticketId');
+  if (ticketIdEl) ticketIdEl.textContent = ticketId;
+
+  try {
+    const res = await fetch(`${SCRIPT_URL}?action=getEvaluationData&ticketId=${encodeURIComponent(ticketId)}`);
+    const json = await res.json();
+
+    if (json.error) {
+      showError(json.error);
+      return;
     }
 
-    submitBtn.disabled = true;
-    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>กำลังส่ง...';
+    const loading = document.getElementById('loadingState') || document.getElementById('loading');
+    const form = document.getElementById('evaluationForm');
+    const alreadyEval = document.getElementById('alreadyEvaluatedState');
+    const thankYou = document.getElementById('thankYouState') || document.getElementById('thankYouMessage');
 
-    const evaluationData = {
-        ticketId: new URLSearchParams(window.location.search).get('ticketId'),
-        overallScore: parseInt(overallScore),
-        comments: this.elements['comments'].value.trim()
-    };
+    if (json.alreadyEvaluated) {
+      if (loading) loading.classList.add('hidden');
+      if (alreadyEval) alreadyEval.classList.remove('hidden');
+      else if (thankYou) thankYou.classList.remove('hidden');
+      return;
+    }
 
-    try {
-        const response = await fetch(`${SCRIPT_URL}?action=submitEvaluation`, {
-            method: 'POST',
-            // ✨ แก้ไข: ใช้ JSON.stringify สำหรับ body และกำหนด content-type เป็น text/plain
-            // ตามที่ Apps Script ต้องการเมื่อรับค่าจาก e.postData.contents
-            body: JSON.stringify(evaluationData),
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        });
+    if (json.repairData) {
+      const r = json.repairData;
+      const equipEl = document.getElementById('equipmentNameText') || document.getElementById('info-equipmentName');
+      const opEl = document.getElementById('technicianNameText') || document.getElementById('info-operator');
+      if (equipEl) equipEl.textContent = r['ชื่อครุภัณฑ์'] || r.equipmentName || '-';
+      if (opEl) opEl.textContent = r['ผู้ปฏิบัติงาน'] || r.operator || 'เจ้าหน้าที่ IT';
+    }
 
-        const result = await response.json();
-        if (!result.success) throw new Error(result.message || 'Unknown error');
-        
-        // --- ✨ ส่วนนี้คือโค้ดที่แก้ไขแล้วและทำงานได้ถูกต้อง ✨ ---
-        
-        // ซ่อนฟอร์มทิ้งไปเลย
-        document.getElementById('evaluationForm').classList.add('hidden');
+    if (loading) loading.classList.add('hidden');
+    if (form) form.classList.remove('hidden');
 
-        // แสดงข้อความขอบคุณด้วย SweetAlert พร้อมตั้งเวลาปิด
+  } catch (e) {
+    console.warn('Cannot fetch evaluation data:', e);
+    const loading = document.getElementById('loadingState') || document.getElementById('loading');
+    const form = document.getElementById('evaluationForm');
+    if (loading) loading.classList.add('hidden');
+    if (form) form.classList.remove('hidden');
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  if (typeof liff !== 'undefined') {
+    liff.init({ liffId: LIFF_ID })
+      .then(() => loadTicketData())
+      .catch(err => {
+        console.warn('LIFF init warning:', err);
+        loadTicketData();
+      });
+  } else {
+    loadTicketData();
+  }
+
+  const form = document.getElementById('evaluationForm');
+  if (form) {
+    form.addEventListener('submit', async function(e) {
+      e.preventDefault();
+      const scoreRadio = this.querySelector('input[name="overall"]:checked');
+      const score = scoreRadio ? scoreRadio.value : '';
+
+      if (!score) {
         Swal.fire({
-            icon: 'success',
-            title: 'ขอบคุณสำหรับความคิดเห็น!',
-            text: 'เราได้บันทึกข้อมูลของท่านเรียบร้อยแล้ว',
-            timer: 2500, // แสดงผล 2.5 วินาที
-            showConfirmButton: false, // ไม่ต้องมีปุ่ม OK
-            timerProgressBar: true,   // มีแถบเวลาวิ่งให้ดู
-        }).then(() => {
-            // หลังจากที่ SweetAlert ปิดตัวลง (ครบ 2.5 วิ) ให้สั่งปิดหน้าต่าง LIFF
-            if (liff.isInClient()) {
-                liff.closeWindow();
-            }
+          icon: 'warning',
+          title: 'กรุณาเลือกคะแนน',
+          text: 'โปรดเลือกดาวระดับความพึงพอใจก่อนส่งแบบประเมิน',
+          confirmButtonColor: '#2c7744'
         });
-        // --- สิ้นสุดส่วนที่แก้ไข ---
+        return;
+      }
 
-    } catch (error) {
-        Swal.fire('เกิดข้อผิดพลาด', 'ไม่สามารถบันทึกข้อมูลได้: ' + error.message, 'error');
-        submitBtn.disabled = false;
-        submitBtn.textContent = 'ส่งแบบประเมิน';
-    }
+      const submitBtn = document.getElementById('submitBtn');
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> กำลังบันทึก...';
+      }
+
+      const commentEl = document.getElementById('comments') || document.getElementById('feedback-comments') || this.elements['comments'];
+      const payload = {
+        action: 'submitEvaluation',
+        ticketId: ticketId,
+        overallScore: parseInt(score),
+        comments: (commentEl ? commentEl.value : '').trim()
+      };
+
+      try {
+        const res = await fetch(SCRIPT_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify(payload)
+        });
+
+        const result = await res.json();
+        if (result.success) {
+          form.classList.add('hidden');
+          const thankYou = document.getElementById('thankYouState') || document.getElementById('thankYouMessage');
+          if (thankYou) thankYou.classList.remove('hidden');
+
+          setTimeout(() => {
+            closeAppWindow();
+          }, 2500);
+        } else {
+          throw new Error(result.message || 'บันทึกไม่สำเร็จ');
+        }
+      } catch (err) {
+        Swal.fire({
+          icon: 'error',
+          title: 'เกิดข้อผิดพลาด',
+          text: err.message,
+          confirmButtonColor: '#2c7744'
+        });
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = '<span>ส่งแบบประเมิน</span>';
+        }
+      }
+    });
+  }
 });
