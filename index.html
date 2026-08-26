@@ -104,9 +104,12 @@
         </div>
         <h2 class="text-xl font-bold text-gray-800">เกิดข้อผิดพลาด</h2>
         <p id="errorMessage" class="text-red-500 mt-2 text-sm leading-relaxed"></p>
-        <div class="mt-6">
+        <div class="mt-6 flex justify-center space-x-3">
           <button type="button" onclick="location.reload()" class="bg-[#2c7744] hover:bg-[#235e36] text-white text-sm font-semibold py-2 px-6 rounded-lg transition-colors">
             ลองใหม่อีกครั้ง
+          </button>
+          <button type="button" onclick="closeAppWindow()" class="bg-gray-200 hover:bg-gray-300 text-gray-700 text-sm font-semibold py-2 px-6 rounded-lg transition-colors">
+            ปิดหน้าต่าง
           </button>
         </div>
       </div>
@@ -175,17 +178,43 @@
     const LIFF_ID = "2007495650-QYp0MBBk";
     const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx6BZKTTBGM_9hQDdnVOLoGG6tWo9fhIdRZV57kVoAmg9kdzbwjC7jA3kn-j3N5iJz9/exec";
 
-    function getParam(param) {
+    function getTicketId() {
+      const url = window.location.href;
       const urlParams = new URLSearchParams(window.location.search);
-      let val = urlParams.get(param);
-      if (!val && window.location.hash) {
-        const hashParams = new URLSearchParams(window.location.hash.substring(1));
-        val = hashParams.get(param);
-      }
-      return val || '';
-    }
+      
+      // 1. Direct query parameter (?ticketId=...)
+      let val = urlParams.get('ticketId') || urlParams.get('ticketID') || urlParams.get('ticket_id');
+      if (val) return val.trim();
 
-    const ticketId = getParam('ticketId');
+      // 2. LINE liff.state encoded query parameter
+      const liffState = urlParams.get('liff.state');
+      if (liffState) {
+        try {
+          const decoded = decodeURIComponent(liffState);
+          const stateParams = new URLSearchParams(decoded.startsWith('?') ? decoded.slice(1) : decoded);
+          val = stateParams.get('ticketId') || stateParams.get('ticketID') || stateParams.get('ticket_id');
+          if (val) return val.trim();
+        } catch (_) {}
+      }
+
+      // 3. Hash parameter (#ticketId=... or #/ticketId=...)
+      if (window.location.hash) {
+        try {
+          const hashStr = window.location.hash.replace(/^#\/?/, '');
+          const hashParams = new URLSearchParams(hashStr.startsWith('?') ? hashStr.slice(1) : hashStr);
+          val = hashParams.get('ticketId') || hashParams.get('ticketID') || hashParams.get('ticket_id');
+          if (val) return val.trim();
+        } catch (_) {}
+      }
+
+      // 4. Regex fallback on full URL string
+      const match = url.match(/[?&#]ticketId=([^&#]+)/i);
+      if (match) {
+        try { return decodeURIComponent(match[1]).trim(); } catch (_) { return match[1].trim(); }
+      }
+
+      return '';
+    }
 
     const loadingState = document.getElementById('loadingState');
     const evaluationForm = document.getElementById('evaluationForm');
@@ -212,6 +241,7 @@
     }
 
     async function loadTicketData() {
+      const ticketId = getTicketId();
       if (!ticketId) {
         showError('ไม่พบรหัสใบแจ้งซ่อม (Ticket ID) กรุณาเปิดลิงก์จากข้อความแจ้งเตือนใน LINE อีกครั้ง');
         return;
@@ -223,11 +253,6 @@
         const res = await fetch(`${SCRIPT_URL}?action=getEvaluationData&ticketId=${encodeURIComponent(ticketId)}`);
         const json = await res.json();
 
-        if (json.error) {
-          showError(json.error);
-          return;
-        }
-
         if (json.alreadyEvaluated) {
           loadingState.classList.add('hidden');
           alreadyEvaluatedState.classList.remove('hidden');
@@ -238,16 +263,15 @@
           const r = json.repairData;
           document.getElementById('equipmentNameText').textContent = r['ชื่อครุภัณฑ์'] || r.equipmentName || '-';
           document.getElementById('technicianNameText').textContent = r['ผู้ปฏิบัติงาน'] || r.operator || 'เจ้าหน้าที่ศูนย์เทคโนโลยีสารสนเทศ';
+          loadingState.classList.add('hidden');
+          evaluationForm.classList.remove('hidden');
+        } else {
+          showError(json.error || json.message || `ไม่พบข้อมูลงานซ่อมสำหรับรหัส: ${ticketId}`);
         }
-
-        loadingState.classList.add('hidden');
-        evaluationForm.classList.remove('hidden');
 
       } catch (e) {
         console.warn('Cannot fetch evaluation data:', e);
-        // Fallback: แสดงฟอร์มโดยใช้ ticketId ที่ได้จาก URL
-        loadingState.classList.add('hidden');
-        evaluationForm.classList.remove('hidden');
+        showError('ไม่สามารถเชื่อมต่อระบบประเมินได้ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่อีกครั้ง');
       }
     }
 
@@ -296,13 +320,24 @@
           return;
         }
 
+        const currentTicketId = getTicketId();
+        if (!currentTicketId) {
+          Swal.fire({
+            icon: 'error',
+            title: 'ไม่พบรหัสงานซ่อม',
+            text: 'ไม่สามารถระบุรหัสใบแจ้งซ่อมได้ กรุณาเปิดลิงก์ใหม่',
+            confirmButtonColor: '#2c7744'
+          });
+          return;
+        }
+
         const submitBtn = document.getElementById('submitBtn');
         submitBtn.disabled = true;
         submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> กำลังบันทึก...';
 
         const payload = {
           action: 'submitEvaluation',
-          ticketId: ticketId,
+          ticketId: currentTicketId,
           overallScore: parseInt(score),
           comments: (document.getElementById('comments').value || '').trim()
         };
